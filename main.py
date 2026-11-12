@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -16,6 +16,12 @@ movies = [
         "title": "Interstellar",
         "director": "Christopher Nolan",
         "year": 2014,
+    },
+    {
+        "id": 3,
+        "title": "Fantastic Four",
+        "director": "Matt Shakman",
+        "year": 2025,
     },
 ]
 
@@ -35,21 +41,36 @@ def find_movie_index(movie_id: int) -> int | None:
     for index, movie in enumerate(movies):
         if movie["id"] == movie_id:
             return index
-        return None
+    return None
 
 
 @app.get("/movies")
-def get_movies():
-    return movies
+def get_movies(
+    id: int | None = None,
+    min_year: int | None = None,
+    director: str | None = None,
+):
+    if id is not None:
+        index = find_movie_index(id)
+        if index is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found"
+            )
+        return movies[index]  
 
-@app.get("/movies/{id}")
-def getMovies(id: int):
-    index = find_movie_index(id)
-    if index is None:
-        raise HTTPException(
-            status_code = status.HTTP_404_NOT_FOUND, detail = "Movie not found"
-        )
-    return movies[index]
+    result = movies
+
+    if min_year is not None:
+        result = [movie for movie in result if movie["year"] >= min_year]
+
+    if director is not None:
+        result = [
+            movie
+            for movie in result
+            if director.lower() in movie["director"].lower()
+        ]
+
+    return result
 
 
 @app.post("/movies", status_code=status.HTTP_201_CREATED)
@@ -60,11 +81,35 @@ def create_movie(movie: MovieCreate):
     return new_movie
 
 
-app.put("/movies/{id}")
-def putMovies(id: int):
+@app.put("/movies/{id}")
+def replace_movie(id: int, movie: MovieCreate):
     index = find_movie_index(id)
     if index is None:
         raise HTTPException(
-                    status_code = status.HTTP_404_NOT_FOUND, detail = "Movie not found"
-                )
-    update_movie = {"id": id, movie:MovieUpdate}
+            status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found"
+        )
+
+    updated_movie = {"id": id, **movie.model_dump()}
+    movies[index] = updated_movie
+    return updated_movie
+
+@app.patch("/movies/{id}")
+def patch_Movies(id: int, movie: MovieUpdate) :
+    index = find_movie_index(id)
+    if index is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail = "Movie not found"
+        )
+    update_data = movie.model_dump(exclude_unset=True)
+    movies[index].update(update_data)
+    return movies[index]
+
+@app.delete("/movies/{id}", status_code = status.HTTP_204_NO_CONTENT)
+def delete_movie(id: int):
+    index = find_movie_index(id)
+    if index is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail = "Movie not found"
+            )
+    movies.pop(index)
+    return None
